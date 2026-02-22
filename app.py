@@ -1,11 +1,10 @@
 import streamlit as st
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+import google.generativeai as genai
 
 # Page configuration
 st.set_page_config(page_title="Tamil-English AI Tutor", page_icon="🎓")
 
-# Custom CSS for a better look
+# Custom CSS
 st.markdown("""
     <style>
     .stChatMessage { border-radius: 15px; margin-bottom: 10px; }
@@ -13,102 +12,62 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-@st.cache_resource
-def load_model(model_id="Qwen/Qwen2.5-1.5B-Instruct"):
-    """
-    Caches the model so it only loads once.
-    Using 1.5B version for stability on free hosting platforms.
-    """
-    try:
-        # Configure 4-bit quantization to save RAM
-        quant_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-        )
-
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            quantization_config=quant_config,
-            device_map="auto",
-            trust_remote_code=True
-        )
-        return model, tokenizer
-    except Exception as e:
-        st.error(f"Critical error loading model: {str(e)}")
-        return None, None
-
 def main():
     st.title("🎓 Tamil-English Language Tutor")
     st.subheader("Learn English through Tamil with AI")
 
-    # Load Model
-    if "model_loaded" not in st.session_state:
-        with st.spinner("Initializing AI Teacher... This may take a minute on free servers."):
-            model, tokenizer = load_model()
-            if model and tokenizer:
-                st.session_state.model = model
-                st.session_state.tokenizer = tokenizer
-                st.session_state.model_loaded = True
-            else:
-                st.warning("The server might not have enough memory to run this model. Try refreshing.")
-                return
+    # API Key Configuration
+    # In Streamlit Cloud, you can add this to "Settings > Secrets" as GEMINI_API_KEY = "your_key"
+    api_key = st.sidebar.text_input("Enter Gemini API Key", type="password")
+    
+    if not api_key:
+        st.info("Please enter your Gemini API Key in the sidebar to start learning! You can get a free key at https://aistudio.google.com/", icon="🔑")
+        return
+
+    # Initialize Gemini
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        system_instruction=(
+            "You are an encouraging English Teacher for Tamil speakers. "
+            "Explain English grammar and vocabulary primarily in Tamil. "
+            "Provide clear English examples. If the user makes a mistake in English, "
+            "gently correct them using Tamil explanations."
+        )
+    )
 
     # Initialize Chat History
     if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "system", "content": (
-                "You are an encouraging English Teacher for Tamil speakers. "
-                "Explain English grammar and vocabulary primarily in Tamil. "
-                "Provide clear English examples. If the user makes a mistake, gently correct them in Tamil."
-            )}
-        ]
+        st.session_state.messages = []
+        # Start the chat session
+        st.session_state.chat = model.start_chat(history=[])
 
     # Display Chat History
     for message in st.session_state.messages:
-        if message["role"] != "system":
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
     # Chat Input
-    if prompt := st.chat_input("Ask a grammar question (e.g., Explain 'Present Tense' in Tamil)"):
+    if prompt := st.chat_input("Ask a grammar question (e.g., How to use 'Have' and 'Has'?)"):
+        # Display user message
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
+        # Generate Response
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
             response_placeholder.markdown("Teacher is typing...")
-
-            # Format prompt
-            input_text = st.session_state.tokenizer.apply_chat_template(
-                st.session_state.messages,
-                tokenize=False,
-                add_generation_prompt=True
-            )
             
-            model_inputs = st.session_state.tokenizer([input_text], return_tensors="pt").to(st.session_state.model.device)
-
-            # Generate
-            generated_ids = st.session_state.model.generate(
-                **model_inputs,
-                max_new_tokens=512,
-                temperature=0.7,
-                do_sample=True,
-                pad_token_id=st.session_state.tokenizer.eos_token_id
-            )
-
-            # Decode
-            response_ids = [
-                output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
-            ]
-            full_response = st.session_state.tokenizer.batch_decode(response_ids, skip_special_tokens=True)[0]
-            
-            response_placeholder.markdown(full_response)
-            
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
+            try:
+                # Send message to Gemini
+                response = st.session_state.chat.send_message(prompt)
+                full_response = response.text
+                
+                response_placeholder.markdown(full_response)
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
 
 if __name__ == "__main__":
     main()
