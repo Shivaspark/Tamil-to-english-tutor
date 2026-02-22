@@ -4,4 +4,4 @@ torch
 accelerate
 sentencepiece
 bitsandbytes>=0.46.1
-google.generativeai
+google-generativeai

@@ -26,8 +26,10 @@ def main():
 
     # Initialize Gemini
     genai.configure(api_key=api_key)
+    
+    # Updated to Gemini 2.5 Flash for the latest stable support
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="gemini-2.5-flash",
         system_instruction=(
             "You are an encouraging English Teacher for Tamil speakers. "
             "Explain English grammar and vocabulary primarily in Tamil. "
@@ -67,7 +69,11 @@ def main():
                 response_placeholder.markdown(full_response)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
             except Exception as e:
-                st.error(f"Error: {str(e)}")
+                # Detailed error messaging for debugging
+                if "404" in str(e):
+                    st.error("Error: The model version was not found. Please ensure you are using the latest 'google-generativeai' package.")
+                else:
+                    st.error(f"Error: {str(e)}")
 
 if __name__ == "__main__":
     main()
