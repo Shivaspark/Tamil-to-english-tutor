@@ -3,3 +3,4 @@ transformers
 torch
 accelerate
 sentencepiece
+bitsandbytes>=0.46.1
